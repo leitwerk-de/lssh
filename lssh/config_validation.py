@@ -166,7 +166,7 @@ class HostSection():
             if program is None:
                 parts = [p for p in full_command.split(" ") if p != ""]
                 suggestion = " ".join([shlex.quote(p) for p in parts])
-                self.err("The command on line " + str(nr) + " looks not properly escaped, suggested replacement (but use with care, might be wrong): " + suggestion)
+                self.err("The command on line " + str(line_nr) + " looks not properly escaped, suggested replacement (but use with care, might be wrong): " + suggestion)
             elif self.__hostname is None:
                 self.err("Option RemoteCommand is not allowed on line " + str(line_nr) + ", only allowed in an explicit Host section (one host, no wildcards)")
             elif self.__command is not None:
@@ -274,7 +274,7 @@ def transform_config(content, cmd_whitelist, general_proxy):
                     if '*' in argument or '?' in argument or ' ' in argument.strip():
                         cur_section = HostSection(None, None, context)
                     elif not re.match('^[a-zA-Z0-9\\.\\-_]+$', argument.strip()):
-                        context["errors"].append("The hostname " + argument.strip() + " (line " + str(nr) + ") contains invalid characters.")
+                        context["errors"].append("The hostname " + argument.strip() + " (line " + str(line_nr) + ") contains invalid characters."
                         cur_section = HostSection(None, None, context)
                     else:
                         cur_section = HostSection(argument, line, context)
