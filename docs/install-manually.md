@@ -1,21 +1,32 @@
 # Installing lssh manually
 
-# Dependencies
+## Dependencies
 
-- **git**  
+- **Python 3, Urwid and PyXDG**
+  On Debian 13 install these as `python3`, `python3-urwid` and `python3-xdg`.
+  Use distribution packages for a shared installation so every user runs the
+  same administrator-maintained code.
+
+- **git**
   If you want to share your host configuration using git, you will need git installed locally. But another vcs will also work.
 
-- (optional) **sudo**  
+- **OpenSSH client and util-linux**
+  The SSH connection, recording and replay features use `ssh`, `script` and
+  `scriptreplay`. On Debian these are provided by `openssh-client` and
+  `util-linux`.
+
+- (optional) **sudo**
   If you install lssh systemwide, you may need sudo to run config updates as a normal user.
 
-## Needed python packages
+For a full Debian installation, install all runtime and integration packages:
 
-- xdg
-- py-cui
+```bash
+apt-get install python3 python3-urwid python3-xdg git openssh-client util-linux cron bash-completion sudo
+```
 
-You can install them for example using the system package manager or via pip3.
+No user-specific Python environment is needed.
 
-# Installing
+## Installing
 
 Before you start to install, you need to specify a few paths on your file system.
 Placeholders are used in the rest of this guide that you need to replace with your actual chosen path.
@@ -66,8 +77,8 @@ validated = "<hosts validated>"
 def update_hosts():
     # Called when a user executes `lssh --update-hosts`
     import subprocess
-    subprocess.run(["git", "pull"], cwd=repo_clone)
-    subprocess.run(["lssh", "--load-from", repo_clone])
+    subprocess.run(["git", "pull"], cwd=repo_clone, check=True)
+    subprocess.run(["lssh", "--load-from", repo_clone], check=True)
 
 sys.path.append("<lib>")
 

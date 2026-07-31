@@ -1,94 +1,66 @@
 #! /usr/bin/env python3
 
-import argparse, crontab, os, pathlib, pkgutil, shutil, ssh_config, subprocess, sys
+import argparse
+import os
+import pathlib
+import subprocess
+import sys
 
-# Check commandline
-parser = argparse.ArgumentParser(prog='debian-systemwide-install')
+import crontab
+from debian_common import (
+    APT_PACKAGES,
+    SYSTEM_PATHS,
+    install_dependencies,
+    replace_python_package,
+    validate_python_sources,
+    verify_dependencies,
+)
+import ssh_config
 
-parser.add_argument('-i', '--install-packages', dest='packages', action='store_true', help='Automatically install needed packages via apt and python modules via pip')
-parser.add_argument('-p', '--proxy', help='Specify a proxy host that is always used for connections from this machine')
-parser.add_argument('clone_url', help='Git clone url to load the ssh configuration')
 
-parsed_args = parser.parse_args()
+def parse_args():
+    parser = argparse.ArgumentParser(prog="debian-systemwide-install")
+    parser.add_argument(
+        "-i",
+        "--install-packages",
+        dest="packages",
+        action="store_true",
+        help="install all runtime dependencies with apt-get",
+    )
+    parser.add_argument(
+        "-p",
+        "--proxy",
+        help="specify a proxy host that is always used for connections",
+    )
+    parser.add_argument(
+        "clone_url", help="Git clone URL used to load the SSH configuration"
+    )
+    return parser.parse_args()
 
-repo_url = parsed_args.clone_url
 
-# Run the installation
+def dependency_preflight(install_packages):
+    if install_packages:
+        print("Installing Debian dependencies: " + " ".join(APT_PACKAGES))
+        install_dependencies()
 
-# Check for packages
-if not parsed_args.packages:
-    missing_apt_packages = []
-    if shutil.which("sudo") is None:
-        missing_apt_packages.append("sudo")
-    if shutil.which("git") is None:
-        missing_apt_packages.append("git")
-    if shutil.which("pip3") is None:
-        missing_apt_packages.append("python3-pip")
-    if pkgutil.find_loader('xdg') is None:
-        missing_apt_packages.append("python3-xdg")
-    py_cui_available = pkgutil.find_loader('py_cui') is not None
-    if len(missing_apt_packages) > 1:
-        print("The following debian packages are missing: " + " ".join(missing_apt_packages), file=sys.stderr)
-    elif len(missing_apt_packages) == 1:
-        print("The debian package `" + missing_apt_packages[0] + "' is missing.", file=sys.stderr)
-    if not py_cui_available:
-        print("The python module `py-cui' is missing.", file=sys.stderr)
-    if len(missing_apt_packages) > 0 or not py_cui_available:
-        print("You may run this installer with -i (or --install-packages) to install dependencies automatically.", file=sys.stderr)
-        print("Note: The uninstaller will not uninstall these dependencies", file=sys.stderr)
+    missing = verify_dependencies()
+    if missing:
+        print(
+            "The following Debian packages are missing: " + " ".join(missing),
+            file=sys.stderr,
+        )
+        print(
+            "Install them with `apt-get install " + " ".join(missing) +
+            "` or rerun this installer with -i.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
-# Copy source files
-try:
-    base_dir = pathlib.Path(os.path.realpath(__file__)).parent.parent
-    src = base_dir / "lssh"
-    dst = pathlib.Path("/usr/local/lib/lssh")
-    print("Copying source files to " + str(dst) + " ...")
-    os.makedirs(dst, exist_ok=True)
-    src_files = {f for f in os.listdir(src) if f.endswith(".py")}
-    dst_files = {f for f in os.listdir(dst) if f.endswith(".py")}
-    # Copy from source to destination
-    for filename in src_files:
-        shutil.copy(src / filename, dst / filename)
-    # Remove files that have been removed in source dir
-    for filename in (dst_files - src_files):
-        os.remove(dst / filename)
-except PermissionError as e:
-    print("Got a PermissionError: " + str(e), file=sys.stderr)
-    print("Note, that this system-wide installer needs root permissions.")
-    sys.exit(1)
 
-if parsed_args.packages:
-    # Install needed debian packages
-    print("Installing sudo, git, python3-pip and python3-xdg ...")
-    subprocess.run(["apt", "install", "-y", "sudo", "git", "python3-pip", "python3-xdg"]).check_returncode()
-
-    # Install the py_cui module
-    print("Installing the py_cui python module ...")
-    subprocess.run(["pip3", "install", "py_cui"])
-
-# Clone the repository
-lssh_home = pathlib.Path("/var/local/lssh")
-repo_path = lssh_home / "host_repo"
-repo_clone_needed = not os.path.isdir(repo_path / ".git")
-if repo_clone_needed:
-    print("Cloning repository into " + str(repo_path) + " ...")
-    os.makedirs(repo_path, mode=0o700, exist_ok=True)
-    ret = subprocess.run(["git", "clone", repo_url, str(repo_path)]).returncode
-    git_clone_success = ret == 0
-else:
-    print("Repository in " + str(repo_path) + " already exists.")
-
-# Create the directory for validated hosts
-validated = lssh_home / "hosts"
-print("Creating directory for validated hosts in " + str(validated) + " ...")
-os.makedirs(validated, exist_ok=True)
-
-# Create a pull wrapper-script
-wrapper_file = "/var/local/lssh/pull.sh"
-print("Creating pull wrapper " + str(wrapper_file) + " ...")
-with open(wrapper_file, "w") as f:
-    f.write("""#! /bin/bash
+def write_pull_wrapper(path):
+    print("Creating pull wrapper " + str(path) + " ...")
+    with open(path, "w") as file:
+        file.write("""#! /bin/bash
 
 cd "$(dirname "$0")"/host_repo || exit 1
 pull_output="$(git pull 2>&1)"
@@ -100,82 +72,123 @@ if [ "$pull_exit" != "0" ]; then
 fi
 /usr/local/bin/lssh --load-from .
 """)
-os.chmod(wrapper_file, 0o755)
+    os.chmod(path, 0o755)
 
-# Create a sudo rule for pull
-sudo_rule_file = "/etc/sudoers.d/lssh"
-print("Creating sudo rule in " + sudo_rule_file + " ...")
-with open(sudo_rule_file, "w") as f:
-    f.write("""# Allow anyone to execute "git pull" as user lssh
-ALL ALL = (root) NOPASSWD:/var/local/lssh/pull.sh
-""")
-os.chmod(sudo_rule_file, 0o440)
 
-# Create the lssh executable file
-lssh_file = "/usr/local/bin/lssh"
-print("Creating lssh executable in " + str(lssh_file) + " ...")
-if parsed_args.proxy is not None:
-    main_call = """options = {
-    "general_proxy": """ + repr(parsed_args.proxy) + """,
+def write_launcher(path, proxy):
+    print("Creating lssh executable in " + str(path) + " ...")
+    if proxy is not None:
+        main_call = """options = {
+    "general_proxy": """ + repr(proxy) + """,
 }
 main.main(hosts_dir, update_hosts, attributes=options)
 """
-else:
-    main_call = "main.main(hosts_dir, update_hosts)\n"
+    else:
+        main_call = "main.main(hosts_dir, update_hosts)\n"
 
-with open(lssh_file, "w") as f:
-    f.write("""#! /usr/bin/env python3
+    with open(path, "w") as file:
+        file.write("""#! /usr/bin/env python3
 
+import subprocess
 import sys
 
 hosts_dir = "/var/local/lssh/hosts"
 
 def update_hosts():
-    import subprocess
-    subprocess.run(["sudo", "/var/local/lssh/pull.sh"])
+    subprocess.run(["sudo", "/var/local/lssh/pull.sh"], check=True)
 
-sys.path.append("/usr/local/lib")
+sys.path.insert(0, "/usr/local/lib")
 
 from lssh import main
 """ + main_call)
-os.chmod(lssh_file, 0o755)
+    os.chmod(path, 0o755)
 
-# Create remotecommand-whitelist config file
-remotecommand_whitelist_file = "/etc/lssh/remotecommand-whitelist.csv"
-print("Creating config file " + remotecommand_whitelist_file + " ...")
-if os.path.isfile(remotecommand_whitelist_file):
-    print("  (did already exist)")
-else:
-    os.makedirs("/etc/lssh", exist_ok=True)
-    open(remotecommand_whitelist_file, "a").close()
 
-# Add a section to the ssh config
-print("Setting relevant configs in /etc/ssh/ssh_config ...")
-ssh_config.add_section()
+def main():
+    args = parse_args()
+    if os.geteuid() != 0:
+        print(
+            "This system-wide installer must run as root. "
+            "Use `sudo ./install/debian-systemwide-install ...`.",
+            file=sys.stderr,
+        )
+        return 1
 
-# Setup tab-completion
-complete_file = "/etc/bash_completion.d/lssh_completion"
-print("Writing bash completion instructions to " + complete_file + " ...")
-with open(complete_file, "w") as f:
-    f.write("complete -o filenames -C 'lssh __complete__' lssh\n")
+    base_dir = pathlib.Path(os.path.realpath(__file__)).parent.parent
+    source = base_dir / "lssh"
 
-# Crontab entry
-print("Creating a crontab entry to update the hostlist regularly ...")
-crontab.add_pull_entry()
+    try:
+        validate_python_sources(source)
+        dependency_preflight(args.packages)
+    except (OSError, RuntimeError, subprocess.CalledProcessError, SyntaxError) as error:
+        print("Preflight failed: " + str(error), file=sys.stderr)
+        return 1
 
-if repo_clone_needed:
-    if git_clone_success:
-        # Initially load the ssh config from the repo
-        print("Loading initial hostlist ...")
-        ret = subprocess.run(["lssh", "--load-from", str(repo_path)]).returncode
-        if ret != 0:
-            print("Your ssh configuration has not been loaded because of the previous errors.", file=sys.stderr)
-            exit(1)
+    paths = SYSTEM_PATHS
+    print("Copying source files to " + str(paths.library) + " ...")
+    replace_python_package(source, paths.library)
+
+    repo_clone_needed = not (paths.repository / ".git").is_dir()
+    if repo_clone_needed:
+        print("Cloning repository into " + str(paths.repository) + " ...")
+        os.makedirs(paths.repository, mode=0o700, exist_ok=True)
+        try:
+            subprocess.run(
+                ["git", "clone", args.clone_url, str(paths.repository)], check=True
+            )
+        except subprocess.CalledProcessError as error:
+            print("Could not clone the host repository: " + str(error), file=sys.stderr)
+            return 1
     else:
-        print("")
-        print("Warning:")
-        print("  Your git repository could not be cloned successfully. (See above)")
-        print("  Please ensure you have the needed permissions, then clone")
-        print("  the repository to the path " + str(repo_path) + " or run")
-        print("  this installer again.")
-        exit(1)
+        print("Repository in " + str(paths.repository) + " already exists.")
+
+    print("Creating directory for validated hosts in " + str(paths.hosts) + " ...")
+    os.makedirs(paths.hosts, exist_ok=True)
+    write_pull_wrapper(paths.pull_wrapper)
+
+    sudo_rule = pathlib.Path("/etc/sudoers.d/lssh")
+    print("Creating sudo rule in " + str(sudo_rule) + " ...")
+    with open(sudo_rule, "w") as file:
+        file.write(
+            "# Allow anyone to update the centrally managed lssh configuration\n"
+            "ALL ALL = (root) NOPASSWD:/var/local/lssh/pull.sh\n"
+        )
+    os.chmod(sudo_rule, 0o440)
+
+    write_launcher(paths.launcher, args.proxy)
+
+    print("Creating config file " + str(paths.whitelist) + " ...")
+    if paths.whitelist.is_file():
+        print("  (did already exist)")
+    else:
+        os.makedirs(paths.whitelist.parent, exist_ok=True)
+        paths.whitelist.touch()
+
+    print("Setting relevant configs in /etc/ssh/ssh_config ...")
+    ssh_config.add_section()
+
+    print("Writing bash completion instructions to " + str(paths.completion) + " ...")
+    with open(paths.completion, "w") as file:
+        file.write("complete -o filenames -C 'lssh __complete__' lssh\n")
+
+    print("Creating a crontab entry to update the hostlist regularly ...")
+    crontab.add_pull_entry()
+
+    if repo_clone_needed:
+        print("Loading initial hostlist ...")
+        try:
+            subprocess.run(
+                [str(paths.launcher), "--load-from", str(paths.repository)],
+                check=True,
+            )
+        except subprocess.CalledProcessError:
+            print(
+                "The SSH configuration was not loaded because validation failed.",
+                file=sys.stderr,
+            )
+            return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

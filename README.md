@@ -21,16 +21,36 @@ A central git repository contains the ssh configuration for all your hosts and w
 
 ### Requirements
 
-The following Python packages have to be installed via pip or or package manager: xgd, cui
+On Debian 13 (Trixie), lssh uses only distribution packages. The Python
+runtime dependencies are `python3-urwid` and `python3-xdg`. A system-wide
+installation also needs `python3`, `git`, `openssh-client`, `util-linux`,
+`cron`, `bash-completion` and `sudo`.
+
+Users do not need a virtual environment or any packages in their home
+directories. Administrators install the dependencies once through APT.
 
 ### Debian
 
-For the debian linux distribution, there is an install-script that installs lssh for all users and must be run as root:  
-`./install/debian-systemwide-install <git_repo_url>`  
+For Debian, there is an install script that installs lssh for all users and
+must be run as root:
+
+```bash
+./install/debian-systemwide-install -i <git_repo_url>
+```
+
+Without `-i`, the installer only checks that all required Debian packages are
+already installed. With `-i`, it installs them using `apt-get` before replacing
+the installed lssh source files.
+
 Replace `<git_repo_url>` with the clone url of your ssh configuration repository, that must be formatted as described in [SSH config format](./docs/ssh_config_format.md)
 
 There is also a corresponding uninstaller:  
 `./install/debian-systemwide-uninstall`
+
+The current installer keeps the existing `/usr/local` layout. The centralized
+package and path definitions, including the dependency mapping for a future
+Debian package, are described in
+[Debian packaging preparation](./docs/debian-packaging.md).
 
 ### Other distributions
 
