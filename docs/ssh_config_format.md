@@ -40,7 +40,6 @@ For security reasons, the following options cannot be configured via the central
 - Include
 - LocalCommand
 - PermitLocalCommand
-- ProxyCommand
 - ProxyUseFdpass
 - RemoteCommand
 - XAuthLocation
