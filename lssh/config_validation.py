@@ -54,6 +54,7 @@ instruction_whitelist = {
     'pkcs11provider',
     'port',
     'preferredauthentications',
+    'proxycommand',
     'proxyjump',
     'pubkeyacceptedkeytypes',
     'pubkeyauthentication',
@@ -95,7 +96,7 @@ instruction_whitelist = {
 # Include:
 #   An attacker could include unwanted files (needs to be owned by root, but there might be a way to do so).
 #   This would bypass all the other security measures.
-# LocalCommand, PermitLocalCommand, ProxyCommand, ProxyUseFdpass, RemoteCommand, XAuthLocation:
+# LocalCommand, PermitLocalCommand, ProxyUseFdpass, RemoteCommand, XAuthLocation:
 #   An attacker could specify arbitrary commands
 # SendEnv:
 #   Environment variables should generally not contain secrets. But to be completely sure, sending
