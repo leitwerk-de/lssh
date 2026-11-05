@@ -13,6 +13,7 @@ def parse_args():
     parser.add_argument('--validate', dest='validate', metavar='CONFDIR', help='Load the given ssh config from the directory CONFDIR, validate it, but do not store it anywhere. If valid, lssh will print nothing and exit with 0. If invalid, lssh will print the errors and exit with a non-zero exit status.')
     parser.add_argument('-v', '--verbose', action='count', help='Verbose mode. Enables printing the resulting ssh command line before connecting.')
     parser.add_argument('--version', dest='version', action='store_true', help='Show the current version number and exit.')
+    parser.add_argument('--regex', action='store_true', help='Treat the first host term as a case-insensitive regular expression matching the entire alias. Additional terms remain substring/keyword/glob filters. Connection mode only.')
 
     options_summary = [c for c in parameterless_options + parameter_options]
     options_summary.sort(key=lambda c: (str.lower(c), c))
@@ -22,7 +23,7 @@ def parse_args():
     for opt in parameter_options:
         pass_through.add_argument('-' + opt, action='append', help=argparse.SUPPRESS)
 
-    parser.add_argument('substring', metavar='[user@]substring', nargs='?', help='(Part of) the hostname to connect to, with an additional username if needed.')
-    parser.add_argument('additional_substrings', metavar='substring', nargs='*', help='Additional parts of the hostname to connect to, which further restrict the search')
+    parser.add_argument('substring', metavar='[user@]term', nargs='?', help="Host alias substring or keyword; terms containing *, ? or [ match the entire alias as a glob. Quote patterns, e.g. 'srv01.ba.*'. An optional user@ prefix sets the SSH user.")
+    parser.add_argument('additional_substrings', metavar='term', nargs='*', help='Additional substring, keyword or quoted alias glob filters; every term must match.')
 
     return parser.parse_args()

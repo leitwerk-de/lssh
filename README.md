@@ -8,6 +8,7 @@ A central git repository contains the ssh configuration for all your hosts and w
 
 - Searching hosts by specifying keywords (matching hostname, or the filename that contains the host)
 - Possibility to specify multiple keywords for filtering hosts
+- Quoted wildcard patterns for host aliases, combined with keyword filters
 - A tui dialog to choose one of the hosts matching the given keywords
 - Checks additional keywords that are given in your central configuration (per file or per host)
 - Automatic session recording of each ssh session in the home directory of the calling user with a replay command option
@@ -60,3 +61,13 @@ See [Installing lssh manually](./docs/install-manually.md).
 ## Using lssh
 
 After successful installation, run `lssh --help` to see the possible commands and options.
+
+Select aliases with substrings or quoted globs, for example
+`lssh 'srv0?.ba.*' produktion` or `lssh 'root@srv01.ba.*'`.
+Every term must match; globs match the entire alias, while plain terms also
+search keywords. See [Host search](./docs/host-search.md) for matching and
+Bash completion rules.
+
+For regular expressions, explicitly select `--regex`, for example
+`lssh --regex 'srv[0-9]{1,3}\..*' produktion` for aliases with one to three
+digits followed by a dot. Ordinary glob search remains the default.

@@ -1,5 +1,6 @@
-import itertools, os, platform, shlex, subprocess, sys, time
+import itertools, os, platform, re, shlex, subprocess, sys, time
 from lssh import cli_args, hostlist, xdg_compat
+from lssh.matching import compile_host_regex, matches_host_term, matches_host_terms
 
 def group_options_by_customer(hosts):
     map_customer = {}
@@ -17,20 +18,10 @@ def group_options_by_customer(hosts):
     return [make_option(c) for c in customers]
 
 def matches_substring(host, substring):
-    if str.lower(substring) in str.lower(host.display_name):
-        return True
-    for keyword in host.keywords:
-        if substring in keyword:
-            return True
-    return False
+    return matches_host_term(host.display_name, host.keywords, substring)
 
-def matches_all_substrings(host, substring, additional_substrings):
-    if not matches_substring(host, substring):
-        return False
-    for substr in additional_substrings:
-        if not matches_substring(host, substr):
-            return False
-    return True
+def matches_all_substrings(host, substring, additional_substrings, regex=False):
+    return matches_host_terms(host.display_name, host.keywords, [substring] + additional_substrings, regex=regex)
 
 def ensure_no_usernames(substrings):
     for substr in substrings:
@@ -85,6 +76,11 @@ def check_for_conflicting_args(args):
         add_mode("replay", "--replay")
     if args.time is not None:
         add_mode("replay", "--timestamp")
+    if args.regex:
+        add_mode("connect", "--regex")
+        if args.substring is None:
+            print("--regex requires a host expression", file=sys.stderr)
+            sys.exit(1)
 
 def main(hosts_dir, update_hosts, attributes):
     args = cli_args.parse_args()
@@ -132,7 +128,13 @@ def show_proxy_chain(chain):
         print("Connecting via:")
         print("  " + " -> ".join(chain))
 
-def select_host(substring, additional_substrings, hosts_dir):
+def select_host(substring, additional_substrings, hosts_dir, regex=False):
+    if regex:
+        try:
+            compile_host_regex(substring)
+        except re.error as error:
+            print("Invalid host regular expression: " + str(error), file=sys.stderr)
+            sys.exit(1)
     hosts, displaynames = hostlist.load_config(hosts_dir)
     if substring is None:
         matched_hosts = hosts
@@ -140,7 +142,7 @@ def select_host(substring, additional_substrings, hosts_dir):
         matched_hosts = {}
         for display_name in hosts:
             host = hosts[display_name]
-            if matches_all_substrings(host, substring, additional_substrings):
+            if matches_all_substrings(host, substring, additional_substrings, regex=regex):
                 matched_hosts[display_name] = hosts[display_name]
 
     if len(matched_hosts) == 0:
@@ -166,7 +168,7 @@ def select_host(substring, additional_substrings, hosts_dir):
 
 def connect(args, user, substring, additional_substrings, hosts_dir):
     from lssh import ssh_agent
-    selected, proxy_chain = select_host(substring, additional_substrings, hosts_dir)
+    selected, proxy_chain = select_host(substring, additional_substrings, hosts_dir, regex=args.regex)
 
     options_dict = vars(args)
     command = ['ssh']
